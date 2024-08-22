@@ -130,7 +130,7 @@ jobs:
 
         def get_status_option_id(status):
             query = """
-            query GetStatusOptionId($projectId: ID!, $fieldId: ID!) {
+            query GetStatusOptionId($projectId: ID!) {
               node(id: $projectId) {
                 ... on ProjectV2 {
                   field(name: "Status") {
@@ -146,8 +146,7 @@ jobs:
             }
             """
             variables = {
-                "projectId": project_id,
-                "fieldId": status_field_id
+                "projectId": project_id
             }
             print("Query string:")
             print(query)

@@ -66,16 +66,68 @@ jobs:
             data = {'state': 'open', 'state_reason': status}
             requests.patch(url, headers=headers, json=data)
 
-        def update_project_status(status):
+        def get_project_item_id():
             query = '''
-            mutation {
+            query($owner:String!, $name:String!, $number:Int!) {
+              repository(owner:$owner, name:$name) {
+                issue(number:$number) {
+                  projectItems(first:1) {
+                    nodes {
+                      id
+                    }
+                  }
+                }
+              }
+            }
+            '''
+            owner, name = repo.split('/')
+            variables = {
+                'owner': owner,
+                'name': name,
+                'number': int(issue_number)
+            }
+            response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
+            data = response.json()
+            return data['data']['repository']['issue']['projectItems']['nodes'][0]['id']
+
+        def get_status_option_id(status):
+            query = '''
+            query($projectId:ID!, $fieldId:ID!) {
+              node(id:$projectId) {
+                ... on ProjectV2 {
+                  field(id:$fieldId) {
+                    ... on ProjectV2SingleSelectField {
+                      options {
+                        id
+                        name
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            '''
+            variables = {
+                'projectId': project_id,
+                'fieldId': status_field_id
+            }
+            response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
+            data = response.json()
+            options = data['data']['node']['field']['options']
+            return next(option['id'] for option in options if option['name'] == status)
+
+        def update_project_status(status):
+            item_id = get_project_item_id()
+            status_option_id = get_status_option_id(status)
+            query = '''
+            mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $optionId:String!) {
               updateProjectV2ItemFieldValue(
                 input: {
-                  projectId: "%s"
-                  itemId: "%s"
-                  fieldId: "%s"
+                  projectId: $projectId
+                  itemId: $itemId
+                  fieldId: $fieldId
                   value: {
-                    singleSelectOptionId: "%s"
+                    singleSelectOptionId: $optionId
                   }
                 }
               ) {
@@ -84,9 +136,14 @@ jobs:
                 }
               }
             }
-            ''' % (project_id, item_id, status_field_id, status_option_id)
-            
-            requests.post('https://api.github.com/graphql', headers=headers, json={'query': query})
+            '''
+            variables = {
+                'projectId': project_id,
+                'itemId': item_id,
+                'fieldId': status_field_id,
+                'optionId': status_option_id
+            }
+            requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
 
         if event_name == 'create':
             update_issue_status('in_progress')

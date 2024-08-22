@@ -1,4 +1,4 @@
-name: Issue Status Update
+name: Issue and Project Status Update
 
 on:
   create:
@@ -8,70 +8,101 @@ on:
     types: [opened, closed, reopened]
 
 jobs:
-  update_issue_on_branch_create:
-    if: github.ref != 'refs/heads/main' && github.event_name == 'create'
+  update_issue_and_project:
     runs-on: ubuntu-latest
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+
     - name: Extract issue number from branch name
       id: extract_issue_number
-      run: echo "::set-output name=issue_number::$(echo ${GITHUB_REF#refs/heads/} | grep -o -E '[0-9]+')"
+      run: echo "issue_number=$(echo ${GITHUB_REF#refs/heads/} | grep -o -E '[0-9]+')" >> $GITHUB_OUTPUT
 
-    - name: Update Issue to In progress
-      if: steps.extract_issue_number.outputs.issue_number != ''
-      uses: actions-ecosystem/action-update-issue@v1
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        issue_number: ${{ steps.extract_issue_number.outputs.issue_number }}
-        state: "in_progress"
-        body: "This issue is now In progress after branch creation."
+    - name: Update Issue and Project Status
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+        REPO: ${{ github.repository }}
+        ISSUE_NUMBER: ${{ steps.extract_issue_number.outputs.issue_number }}
+        EVENT_NAME: ${{ github.event_name }}
+        PR_ACTION: ${{ github.event.action }}
+        PR_MERGED: ${{ github.event.pull_request.merged }}
+        PROJECT_ID: ${{ secrets.PROJECT_ID }}
+        STATUS_FIELD_ID: ${{ secrets.STATUS_FIELD_ID }}
+      run: |
+        cat << EOF > update_status.py
+        import os
+        import requests
 
-  update_issue_on_pr_create:
-    if: github.event_name == 'pull_request' && github.event.action == 'opened'
-    runs-on: ubuntu-latest
-    steps:
-    - name: Extract issue number from branch name
-      id: extract_issue_number
-      run: echo "::set-output name=issue_number::$(echo ${{ github.event.pull_request.head.ref }} | grep -o -E '[0-9]+')"
+        # GitHub API設定
+        token = os.environ['PROJECT_TOKEN'] if 'PROJECT_TOKEN' in os.environ else os.environ['GITHUB_TOKEN']
+        repo = os.environ['REPO']
+        issue_number = os.environ['ISSUE_NUMBER']
+        event_name = os.environ['EVENT_NAME']
+        pr_action = os.environ.get('PR_ACTION')
+        pr_merged = os.environ.get('PR_MERGED')
+        project_id = os.environ['PROJECT_ID']
+        status_field_id = os.environ['STATUS_FIELD_ID']
 
-    - name: Update Issue to In review
-      if: steps.extract_issue_number.outputs.issue_number != ''
-      uses: actions-ecosystem/action-update-issue@v1
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        issue_number: ${{ steps.extract_issue_number.outputs.issue_number }}
-        state: "In review"
-        body: "This issue is now under review after pull request creation."
+        headers = {
+            'Authorization': f'token {token}',
+            'Accept': 'application/vnd.github.v3+json'
+        }
 
-  update_issue_on_pr_reject:
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == false && github.event.action == 'closed'
-    runs-on: ubuntu-latest
-    steps:
-    - name: Extract issue number from branch name
-      id: extract_issue_number
-      run: echo "::set-output name=issue_number::$(echo ${{ github.event.pull_request.head.ref }} | grep -o -E '[0-9]+')"
+        base_url = f'https://api.github.com/repos/{repo}'
 
-    - name: Update Issue to In progress
-      if: steps.extract_issue_number.outputs.issue_number != ''
-      uses: actions-ecosystem/action-update-issue@v1
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        issue_number: ${{ steps.extract_issue_number.outputs.issue_number }}
-        state: "in_progress"
-        body: "This issue has been set back to In progress after pull request rejection."
+        def update_issue_status(status):
+            url = f'{base_url}/issues/{issue_number}'
+            data = {'state': 'open', 'state_reason': status}
+            requests.patch(url, headers=headers, json=data)
 
-  update_issue_on_pr_merge:
-    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.action == 'closed'
-    runs-on: ubuntu-latest
-    steps:
-    - name: Extract issue number from branch name
-      id: extract_issue_number
-      run: echo "::set-output name=issue_number::$(echo ${{ github.event.pull_request.head.ref }} | grep -o -E '[0-9]+')"
+        def update_project_status(status):
+            query = '''
+            mutation {
+              updateProjectV2ItemFieldValue(
+                input: {
+                  projectId: "%s"
+                  itemId: "%s"
+                  fieldId: "%s"
+                  value: {
+                    singleSelectOptionId: "%s"
+                  }
+                }
+              ) {
+                projectV2Item {
+                  id
+                }
+              }
+            }
+            ''' % (project_id, item_id, status_field_id, status_option_id)
+            
+            requests.post('https://api.github.com/graphql', headers=headers, json={'query': query})
 
-    - name: Update Issue to Doneed
-      if: steps.extract_issue_number.outputs.issue_number != ''
-      uses: actions-ecosystem/action-update-issue@v1
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        issue_number: ${{ steps.extract_issue_number.outputs.issue_number }}
-        state: "Doneed"
-        body: "This issue has been Doneed after the pull request was merged."
+        if event_name == 'create':
+            update_issue_status('in_progress')
+            update_project_status('In Progress')
+        elif event_name == 'pull_request':
+            if pr_action == 'opened':
+                update_issue_status('review_required')
+                update_project_status('Reviewing')
+            elif pr_action == 'closed':
+                if pr_merged == 'true':
+                    update_issue_status('completed')
+                    update_project_status('Done')
+                else:
+                    update_issue_status('in_progress')
+                    update_project_status('In Progress')
+
+        EOF
+
+        python update_status.py

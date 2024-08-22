@@ -80,6 +80,17 @@ jobs:
                 print(f"Response content: {response.content}")
                 raise
 
+        def execute_graphql_query(query, variables):
+            request_json = {
+                'query': query,
+                'variables': variables
+            }
+            print(f"Sending GraphQL request: {json.dumps(request_json, indent=2)}")
+            response = requests.post('https://api.github.com/graphql', json=request_json, headers=headers)
+            print(f"GraphQL response: {response.text}")
+            response.raise_for_status()
+            return response.json()
+
         def get_project_item_id():
             query = '''
             query($owner: String!, $name: String!, $number: Int!) {
@@ -100,10 +111,7 @@ jobs:
                 "name": name,
                 "number": int(issue_number)
             }
-            response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
-            print(f"Get project item ID response: {response.json()}")
-            response.raise_for_status()
-            data = response.json()
+            data = execute_graphql_query(query, variables)
             
             if 'errors' in data:
                 raise Exception(f"GraphQL query failed: {json.dumps(data['errors'])}")
@@ -136,10 +144,7 @@ jobs:
                 "projectId": project_id,
                 "fieldId": status_field_id
             }
-            response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
-            print(f"Get status option ID response: {response.json()}")
-            response.raise_for_status()
-            data = response.json()
+            data = execute_graphql_query(query, variables)
             
             if 'errors' in data:
                 raise Exception(f"GraphQL query failed: {json.dumps(data['errors'])}")
@@ -187,18 +192,11 @@ jobs:
                 "fieldId": status_field_id,
                 "optionId": status_option_id
             }
-            response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
-            print(f"Update project status response: {response.json()}")
-            try:
-                response.raise_for_status()
-                data = response.json()
-                if 'errors' in data:
-                    raise Exception(f"GraphQL mutation failed: {json.dumps(data['errors'])}")
-                print(f"Successfully updated project status to {status}")
-            except Exception as e:
-                print(f"Error updating project status: {str(e)}")
-                print(f"Response content: {response.content}")
-                raise
+            data = execute_graphql_query(query, variables)
+            
+            if 'errors' in data:
+                raise Exception(f"GraphQL mutation failed: {json.dumps(data['errors'])}")
+            print(f"Successfully updated project status to {status}")
 
         try:
             print(f"Event: {event_name}, PR Action: {pr_action}, PR Merged: {pr_merged}")

@@ -93,7 +93,7 @@ jobs:
 
         def get_project_item_id():
             query = '''
-            query($owner: String!, $name: String!, $number: Int!) {
+            query GetProjectItemId($owner: String!, $name: String!, $number: Int!) {
               repository(owner: $owner, name: $name) {
                 issue(number: $number) {
                   projectItems(first: 1) {
@@ -125,7 +125,7 @@ jobs:
 
         def get_status_option_id(status):
             query = '''
-            query($projectId: ID!, $fieldId: ID!) {
+            query GetStatusOptionId($projectId: ID!, $fieldId: ID!) {
               node(id: $projectId) {
                 ... on ProjectV2 {
                   field(id: $fieldId) {
@@ -169,7 +169,7 @@ jobs:
                 return
 
             query = '''
-            mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+            mutation UpdateProjectStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
               updateProjectV2ItemFieldValue(
                 input: {
                   projectId: $projectId

@@ -60,7 +60,7 @@ jobs:
         print(f"Status Field ID: {status_field_id}")
 
         headers = {
-            'Authorization': f'token {token}',
+            'Authorization': f'Bearer {token}',
             'Accept': 'application/vnd.github.v3+json'
         }
 
@@ -82,7 +82,7 @@ jobs:
 
         def get_project_item_id():
             query = '''
-            query getProjectItemId($owner: String!, $name: String!, $number: Int!) {
+            query($owner: String!, $name: String!, $number: Int!) {
               repository(owner: $owner, name: $name) {
                 issue(number: $number) {
                   projectItems(first: 1) {
@@ -117,7 +117,7 @@ jobs:
 
         def get_status_option_id(status):
             query = '''
-            query getStatusOptionId($projectId: ID!, $fieldId: ID!) {
+            query($projectId: ID!, $fieldId: ID!) {
               node(id: $projectId) {
                 ... on ProjectV2 {
                   field(id: $fieldId) {
@@ -164,7 +164,7 @@ jobs:
                 return
 
             query = '''
-            mutation updateProjectStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+            mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
               updateProjectV2ItemFieldValue(
                 input: {
                   projectId: $projectId

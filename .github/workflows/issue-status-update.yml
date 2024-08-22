@@ -133,7 +133,7 @@ jobs:
             query GetStatusOptionId($projectId: ID!, $fieldId: ID!) {
               node(id: $projectId) {
                 ... on ProjectV2 {
-                  field(id: $fieldId) {
+                  field(name: "Status") {
                     ... on ProjectV2SingleSelectField {
                       options {
                         id

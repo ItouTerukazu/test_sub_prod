@@ -86,7 +86,7 @@ jobs:
                 'variables': variables
             }
             print(f"Sending GraphQL query:")
-            print(json.dumps(query, indent=2))
+            print(query)  # クエリ文字列をそのまま出力
             print(f"Variables:")
             print(json.dumps(variables, indent=2))
             response = requests.post('https://api.github.com/graphql', json=request_json, headers=headers)

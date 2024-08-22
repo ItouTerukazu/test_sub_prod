@@ -93,18 +93,18 @@ jobs:
             return response.json()
 
         def get_project_item_id():
-            query = f"""
-            query GetProjectItemId($owner: String!, $name: String!, $number: Int!) {{
-              repository(owner: $owner, name: $name) {{
-                issue(number: $number) {{
-                  projectItems(first: 1) {{
-                    nodes {{
+            query = """
+            query GetProjectItemId($owner: String!, $name: String!, $number: Int!) {
+              repository(owner: $owner, name: $name) {
+                issue(number: $number) {
+                  projectItems(first: 1) {
+                    nodes {
                       id
-                    }}
-                  }}
-                }}
-              }}
-            }}
+                    }
+                  }
+                }
+              }
+            }
             """
             owner, name = repo.split('/')
             variables = {
@@ -129,21 +129,21 @@ jobs:
             return project_items[0]['id']
 
         def get_status_option_id(status):
-            query = f"""
-            query GetStatusOptionId($projectId: ID!, $fieldId: ID!) {{
-              node(id: $projectId) {{
-                ... on ProjectV2 {{
-                  field(id: $fieldId) {{
-                    ... on ProjectV2SingleSelectField {{
-                      options {{
+            query = """
+            query GetStatusOptionId($projectId: ID!, $fieldId: ID!) {
+              node(id: $projectId) {
+                ... on ProjectV2 {
+                  field(id: $fieldId) {
+                    ... on ProjectV2SingleSelectField {
+                      options {
                         id
                         name
-                      }}
-                    }}
-                  }}
-                }}
-              }}
-            }}
+                      }
+                    }
+                  }
+                }
+              }
+            }
             """
             variables = {
                 "projectId": project_id,
@@ -177,23 +177,23 @@ jobs:
                 print(f"Error getting project item or status option: {str(e)}")
                 return
 
-            query = f"""
-            mutation UpdateProjectStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {{
+            query = """
+            mutation UpdateProjectStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
               updateProjectV2ItemFieldValue(
-                input: {{
+                input: {
                   projectId: $projectId
                   itemId: $itemId
                   fieldId: $fieldId
-                  value: {{
+                  value: {
                     singleSelectOptionId: $optionId
-                  }}
-                }}
-              ) {{
-                projectV2Item {{
+                  }
+                }
+              ) {
+                projectV2Item {
                   id
-                }}
-              }}
-            }}
+                }
+              }
+            }
             """
             variables = {
                 "projectId": project_id,

@@ -63,9 +63,11 @@ jobs:
 
         base_url = f'https://api.github.com/repos/{repo}'
 
-        def update_issue_status(status):
+        def update_issue_status(state, state_reason=None):
             url = f'{base_url}/issues/{issue_number}'
-            data = {'state': 'open', 'state_reason': status}
+            data = {'state': state}
+            if state_reason:
+                data['state_reason'] = state_reason
             response = requests.patch(url, headers=headers, json=data)
             try:
                 response.raise_for_status()
@@ -185,18 +187,18 @@ jobs:
 
         try:
             if event_name == 'create':
-                update_issue_status('in_progress')
+                update_issue_status('open')
                 update_project_status('In Progress')
             elif event_name == 'pull_request':
                 if pr_action == 'opened':
-                    update_issue_status('review_required')
+                    update_issue_status('open')
                     update_project_status('Reviewing')
                 elif pr_action == 'closed':
                     if pr_merged == 'true':
-                        update_issue_status('completed')
+                        update_issue_status('closed', 'completed')
                         update_project_status('Done')
                     else:
-                        update_issue_status('in_progress')
+                        update_issue_status('open')
                         update_project_status('In Progress')
         except Exception as e:
             print(f"Error updating issue or project status: {str(e)}")

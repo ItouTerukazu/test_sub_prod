@@ -1,0 +1,77 @@
+name: Issue Status Update
+
+on:
+  create:
+    branches:
+      - '**'
+  pull_request:
+    types: [opened, closed, reopened]
+
+jobs:
+  update_issue_on_branch_create:
+    if: github.ref != 'refs/heads/main' && github.event_name == 'create'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Extract issue number from branch name
+      id: extract_issue_number
+      run: echo "::set-output name=issue_number::$(echo ${GITHUB_REF#refs/heads/} | grep -o -E '[0-9]+')"
+
+    - name: Update Issue to In Progress
+      if: steps.extract_issue_number.outputs.issue_number != ''
+      uses: actions-ecosystem/action-update-issue@v1
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        issue_number: ${{ steps.extract_issue_number.outputs.issue_number }}
+        state: "in_progress"
+        body: "This issue is now in progress after branch creation."
+
+  update_issue_on_pr_create:
+    if: github.event_name == 'pull_request' && github.event.action == 'opened'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Extract issue number from branch name
+      id: extract_issue_number
+      run: echo "::set-output name=issue_number::$(echo ${{ github.event.pull_request.head.ref }} | grep -o -E '[0-9]+')"
+
+    - name: Update Issue to Reviewing
+      if: steps.extract_issue_number.outputs.issue_number != ''
+      uses: actions-ecosystem/action-update-issue@v1
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        issue_number: ${{ steps.extract_issue_number.outputs.issue_number }}
+        state: "reviewing"
+        body: "This issue is now under review after pull request creation."
+
+  update_issue_on_pr_reject:
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == false && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Extract issue number from branch name
+      id: extract_issue_number
+      run: echo "::set-output name=issue_number::$(echo ${{ github.event.pull_request.head.ref }} | grep -o -E '[0-9]+')"
+
+    - name: Update Issue to In Progress
+      if: steps.extract_issue_number.outputs.issue_number != ''
+      uses: actions-ecosystem/action-update-issue@v1
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        issue_number: ${{ steps.extract_issue_number.outputs.issue_number }}
+        state: "in_progress"
+        body: "This issue has been set back to in progress after pull request rejection."
+
+  update_issue_on_pr_merge:
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+    - name: Extract issue number from branch name
+      id: extract_issue_number
+      run: echo "::set-output name=issue_number::$(echo ${{ github.event.pull_request.head.ref }} | grep -o -E '[0-9]+')"
+
+    - name: Update Issue to Finished
+      if: steps.extract_issue_number.outputs.issue_number != ''
+      uses: actions-ecosystem/action-update-issue@v1
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        issue_number: ${{ steps.extract_issue_number.outputs.issue_number }}
+        state: "finished"
+        body: "This issue has been finished after the pull request was merged."

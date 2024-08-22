@@ -43,6 +43,8 @@ jobs:
         cat << EOF > update_status.py
         import os
         import requests
+        import json
+        import sys
 
         # GitHub API設定
         token = os.environ['PROJECT_TOKEN'] if 'PROJECT_TOKEN' in os.environ else os.environ['GITHUB_TOKEN']
@@ -64,7 +66,8 @@ jobs:
         def update_issue_status(status):
             url = f'{base_url}/issues/{issue_number}'
             data = {'state': 'open', 'state_reason': status}
-            requests.patch(url, headers=headers, json=data)
+            response = requests.patch(url, headers=headers, json=data)
+            response.raise_for_status()
 
         def get_project_item_id():
             query = '''
@@ -87,8 +90,18 @@ jobs:
                 'number': int(issue_number)
             }
             response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
+            response.raise_for_status()
             data = response.json()
-            return data['data']['repository']['issue']['projectItems']['nodes'][0]['id']
+            
+            if 'errors' in data:
+                raise Exception(f"GraphQL query failed: {json.dumps(data['errors'])}")
+            
+            project_items = data.get('data', {}).get('repository', {}).get('issue', {}).get('projectItems', {}).get('nodes', [])
+            
+            if not project_items:
+                raise Exception(f"No project items found for issue #{issue_number}")
+            
+            return project_items[0]['id']
 
         def get_status_option_id(status):
             query = '''
@@ -112,13 +125,28 @@ jobs:
                 'fieldId': status_field_id
             }
             response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
+            response.raise_for_status()
             data = response.json()
-            options = data['data']['node']['field']['options']
-            return next(option['id'] for option in options if option['name'] == status)
+            
+            if 'errors' in data:
+                raise Exception(f"GraphQL query failed: {json.dumps(data['errors'])}")
+            
+            options = data.get('data', {}).get('node', {}).get('field', {}).get('options', [])
+            
+            for option in options:
+                if option['name'] == status:
+                    return option['id']
+            
+            raise Exception(f"Status option '{status}' not found in project")
 
         def update_project_status(status):
-            item_id = get_project_item_id()
-            status_option_id = get_status_option_id(status)
+            try:
+                item_id = get_project_item_id()
+                status_option_id = get_status_option_id(status)
+            except Exception as e:
+                print(f"Error getting project item or status option: {str(e)}")
+                return
+
             query = '''
             mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $optionId:String!) {
               updateProjectV2ItemFieldValue(
@@ -143,22 +171,31 @@ jobs:
                 'fieldId': status_field_id,
                 'optionId': status_option_id
             }
-            requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
+            response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            
+            if 'errors' in data:
+                raise Exception(f"GraphQL mutation failed: {json.dumps(data['errors'])}")
 
-        if event_name == 'create':
-            update_issue_status('in_progress')
-            update_project_status('In Progress')
-        elif event_name == 'pull_request':
-            if pr_action == 'opened':
-                update_issue_status('review_required')
-                update_project_status('Reviewing')
-            elif pr_action == 'closed':
-                if pr_merged == 'true':
-                    update_issue_status('completed')
-                    update_project_status('Done')
-                else:
-                    update_issue_status('in_progress')
-                    update_project_status('In Progress')
+        try:
+            if event_name == 'create':
+                update_issue_status('in_progress')
+                update_project_status('In Progress')
+            elif event_name == 'pull_request':
+                if pr_action == 'opened':
+                    update_issue_status('review_required')
+                    update_project_status('Reviewing')
+                elif pr_action == 'closed':
+                    if pr_merged == 'true':
+                        update_issue_status('completed')
+                        update_project_status('Done')
+                    else:
+                        update_issue_status('in_progress')
+                        update_project_status('In Progress')
+        except Exception as e:
+            print(f"Error updating issue or project status: {str(e)}")
+            sys.exit(1)
 
         EOF
 

@@ -92,7 +92,7 @@ jobs:
             return response.json()
 
         def get_project_item_id():
-            query = '''
+            query = """
             query GetProjectItemId($owner: String!, $name: String!, $number: Int!) {
               repository(owner: $owner, name: $name) {
                 issue(number: $number) {
@@ -104,7 +104,7 @@ jobs:
                 }
               }
             }
-            '''
+            """
             owner, name = repo.split('/')
             variables = {
                 "owner": owner,
@@ -124,7 +124,7 @@ jobs:
             return project_items[0]['id']
 
         def get_status_option_id(status):
-            query = '''
+            query = """
             query GetStatusOptionId($projectId: ID!, $fieldId: ID!) {
               node(id: $projectId) {
                 ... on ProjectV2 {
@@ -139,7 +139,7 @@ jobs:
                 }
               }
             }
-            '''
+            """
             variables = {
                 "projectId": project_id,
                 "fieldId": status_field_id
@@ -168,7 +168,7 @@ jobs:
                 print(f"Error getting project item or status option: {str(e)}")
                 return
 
-            query = '''
+            query = """
             mutation UpdateProjectStatus($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
               updateProjectV2ItemFieldValue(
                 input: {
@@ -185,7 +185,7 @@ jobs:
                 }
               }
             }
-            '''
+            """
             variables = {
                 "projectId": project_id,
                 "itemId": item_id,

@@ -71,6 +71,7 @@ jobs:
             response = requests.patch(url, headers=headers, json=data)
             try:
                 response.raise_for_status()
+                print(f"Successfully updated issue status to {state}")
             except requests.exceptions.HTTPError as e:
                 print(f"HTTP Error occurred: {e}")
                 print(f"Response content: {response.content}")
@@ -139,9 +140,10 @@ jobs:
                 raise Exception(f"GraphQL query failed: {json.dumps(data['errors'])}")
             
             options = data.get('data', {}).get('node', {}).get('field', {}).get('options', [])
+            print(f"Available status options: {options}")
             
             for option in options:
-                if option['name'] == status:
+                if option['name'].lower() == status.lower():
                     return option['id']
             
             raise Exception(f"Status option '{status}' not found in project")
@@ -149,7 +151,9 @@ jobs:
         def update_project_status(status):
             try:
                 item_id = get_project_item_id()
+                print(f"Project item ID: {item_id}")
                 status_option_id = get_status_option_id(status)
+                print(f"Status option ID for '{status}': {status_option_id}")
             except Exception as e:
                 print(f"Error getting project item or status option: {str(e)}")
                 return
@@ -179,13 +183,19 @@ jobs:
                 'optionId': status_option_id
             }
             response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            
-            if 'errors' in data:
-                raise Exception(f"GraphQL mutation failed: {json.dumps(data['errors'])}")
+            try:
+                response.raise_for_status()
+                data = response.json()
+                if 'errors' in data:
+                    raise Exception(f"GraphQL mutation failed: {json.dumps(data['errors'])}")
+                print(f"Successfully updated project status to {status}")
+            except Exception as e:
+                print(f"Error updating project status: {str(e)}")
+                print(f"Response content: {response.content}")
+                raise
 
         try:
+            print(f"Event: {event_name}, PR Action: {pr_action}, PR Merged: {pr_merged}")
             if event_name == 'create':
                 update_issue_status('open')
                 update_project_status('In Progress')

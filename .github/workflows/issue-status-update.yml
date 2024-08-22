@@ -16,14 +16,14 @@ jobs:
       id: extract_issue_number
       run: echo "::set-output name=issue_number::$(echo ${GITHUB_REF#refs/heads/} | grep -o -E '[0-9]+')"
 
-    - name: Update Issue to In Progress
+    - name: Update Issue to In progress
       if: steps.extract_issue_number.outputs.issue_number != ''
       uses: actions-ecosystem/action-update-issue@v1
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         issue_number: ${{ steps.extract_issue_number.outputs.issue_number }}
         state: "in_progress"
-        body: "This issue is now in progress after branch creation."
+        body: "This issue is now In progress after branch creation."
 
   update_issue_on_pr_create:
     if: github.event_name == 'pull_request' && github.event.action == 'opened'
@@ -33,13 +33,13 @@ jobs:
       id: extract_issue_number
       run: echo "::set-output name=issue_number::$(echo ${{ github.event.pull_request.head.ref }} | grep -o -E '[0-9]+')"
 
-    - name: Update Issue to Reviewing
+    - name: Update Issue to In review
       if: steps.extract_issue_number.outputs.issue_number != ''
       uses: actions-ecosystem/action-update-issue@v1
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         issue_number: ${{ steps.extract_issue_number.outputs.issue_number }}
-        state: "reviewing"
+        state: "In review"
         body: "This issue is now under review after pull request creation."
 
   update_issue_on_pr_reject:
@@ -50,14 +50,14 @@ jobs:
       id: extract_issue_number
       run: echo "::set-output name=issue_number::$(echo ${{ github.event.pull_request.head.ref }} | grep -o -E '[0-9]+')"
 
-    - name: Update Issue to In Progress
+    - name: Update Issue to In progress
       if: steps.extract_issue_number.outputs.issue_number != ''
       uses: actions-ecosystem/action-update-issue@v1
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         issue_number: ${{ steps.extract_issue_number.outputs.issue_number }}
         state: "in_progress"
-        body: "This issue has been set back to in progress after pull request rejection."
+        body: "This issue has been set back to In progress after pull request rejection."
 
   update_issue_on_pr_merge:
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.action == 'closed'
@@ -67,11 +67,11 @@ jobs:
       id: extract_issue_number
       run: echo "::set-output name=issue_number::$(echo ${{ github.event.pull_request.head.ref }} | grep -o -E '[0-9]+')"
 
-    - name: Update Issue to Finished
+    - name: Update Issue to Doneed
       if: steps.extract_issue_number.outputs.issue_number != ''
       uses: actions-ecosystem/action-update-issue@v1
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         issue_number: ${{ steps.extract_issue_number.outputs.issue_number }}
-        state: "finished"
-        body: "This issue has been finished after the pull request was merged."
+        state: "Doneed"
+        body: "This issue has been Doneed after the pull request was merged."

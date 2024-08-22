@@ -56,6 +56,9 @@ jobs:
         project_id = os.environ['PROJECT_ID']
         status_field_id = os.environ['STATUS_FIELD_ID']
 
+        print(f"Project ID: {project_id}")
+        print(f"Status Field ID: {status_field_id}")
+
         headers = {
             'Authorization': f'token {token}',
             'Accept': 'application/vnd.github.v3+json'
@@ -93,11 +96,12 @@ jobs:
             '''
             owner, name = repo.split('/')
             variables = {
-                'owner': owner,
-                'name': name,
-                'number': int(issue_number)
+                "owner": owner,
+                "name": name,
+                "number": int(issue_number)
             }
             response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
+            print(f"Get project item ID response: {response.json()}")
             response.raise_for_status()
             data = response.json()
             
@@ -129,10 +133,11 @@ jobs:
             }
             '''
             variables = {
-                'projectId': project_id,
-                'fieldId': status_field_id
+                "projectId": project_id,
+                "fieldId": status_field_id
             }
             response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
+            print(f"Get status option ID response: {response.json()}")
             response.raise_for_status()
             data = response.json()
             
@@ -177,12 +182,13 @@ jobs:
             }
             '''
             variables = {
-                'projectId': project_id,
-                'itemId': item_id,
-                'fieldId': status_field_id,
-                'optionId': status_option_id
+                "projectId": project_id,
+                "itemId": item_id,
+                "fieldId": status_field_id,
+                "optionId": status_option_id
             }
             response = requests.post('https://api.github.com/graphql', json={'query': query, 'variables': variables}, headers=headers)
+            print(f"Update project status response: {response.json()}")
             try:
                 response.raise_for_status()
                 data = response.json()

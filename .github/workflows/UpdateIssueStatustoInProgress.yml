@@ -15,8 +15,8 @@ jobs:
       - name: Update Project Issue Status to In Progress
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PROJECT_ID: "PROJECT_ID"
-          STATUS_FIELD_ID: "STATUS_FIELD_ID"
+          PROJECT_ID: ${{ secrets.PROJECT_ID }}
+          STATUS_FIELD_ID: ${{ secrets.STATUS_FIELD_ID }}
         run: |
           # ブランチ名から最初の数字列を抽出
           ISSUE_NUMBER=$(echo ${{ github.ref }} | grep -oP '\d+' | head -n1)

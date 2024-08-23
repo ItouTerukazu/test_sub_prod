@@ -69,18 +69,23 @@ jobs:
 
             # プロジェクト内のイシューのIDを取得
             PROJECT_ITEM_ID=$(gh api graphql -H "Authorization: Bearer $PROJECT_TOKEN" -f query='
-              query($projectId:ID!, $contentId:ID!) {
+              query($projectId:ID!) {
                 node(id:$projectId) {
                   ... on ProjectV2 {
-                    items(first:1, filter:{content:{id:$contentId}}) {
+                    items(first:100) {
                       nodes {
                         id
+                        content {
+                          ... on Issue {
+                            id
+                          }
+                        }
                       }
                     }
                   }
                 }
               }
-            ' -f projectId=$PROJECT_ID -f contentId=$ISSUE_NODE_ID --jq '.data.node.items.nodes[0].id')
+            ' -f projectId=$PROJECT_ID --jq ".data.node.items.nodes[] | select(.content.id == \"$ISSUE_NODE_ID\") | .id")
 
             echo "プロジェクトアイテムID: $PROJECT_ITEM_ID"
 

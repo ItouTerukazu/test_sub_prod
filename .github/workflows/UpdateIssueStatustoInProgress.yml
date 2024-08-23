@@ -46,7 +46,7 @@ jobs:
 
             # プロジェクト内のイシューのIDを取得
             PROJECT_ITEM_ID=$(gh api graphql -f query='
-              query($projectId:ID!, $issueId:ID!) {
+              query($projectId:ID!, $contentId:ID!) {
                 node(id:$projectId) {
                   ... on ProjectV2 {
                     items(first:100) {
@@ -62,7 +62,7 @@ jobs:
                   }
                 }
               }
-            ' -f projectId=$PROJECT_ID -f issueId=$ISSUE_NODE_ID --jq ".data.node.items.nodes[] | select(.content.id == \"$ISSUE_NODE_ID\") | .id")
+            ' -f projectId=$PROJECT_ID -f contentId=$ISSUE_NODE_ID --jq ".data.node.items.nodes[] | select(.content.id == \"$ISSUE_NODE_ID\") | .id")
 
             echo "プロジェクトアイテムID: $PROJECT_ITEM_ID"
 

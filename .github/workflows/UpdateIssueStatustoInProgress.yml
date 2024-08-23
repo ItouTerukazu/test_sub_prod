@@ -33,7 +33,12 @@ jobs:
                   }
                 }
               }
-            ' -f owner=${{ github.repository_owner }} -f repo=${{ github.event.repository.name }} -f number=$ISSUE_NUMBER --jq '.data.repository.issue.id')
+            ' -f owner=${{ github.repository_owner }} -f repo=${{ github.event.repository.name }} -F number=$ISSUE_NUMBER --jq '.data.repository.issue.id')
+
+            if [ -z "$ISSUE_NODE_ID" ]; then
+              echo "イシューが見つかりませんでした。処理を中止します。"
+              exit 1
+            fi
 
             # プロジェクト内のイシューのIDを取得
             PROJECT_ITEM_ID=$(gh api graphql -f query='
@@ -50,8 +55,13 @@ jobs:
               }
             ' -f project=$PROJECT_ID -f issue=$ISSUE_NODE_ID --jq '.data.node.items.nodes[0].id')
 
+            if [ -z "$PROJECT_ITEM_ID" ]; then
+              echo "プロジェクト内にイシューが見つかりませんでした。処理を中止します。"
+              exit 1
+            fi
+
             # プロジェクトアイテムのステータスを更新
-            gh api graphql -f query='
+            UPDATE_RESULT=$(gh api graphql -f query='
               mutation($project:ID!, $item:ID!, $field:ID!, $value:String!) {
                 updateProjectV2ItemFieldValue(input: {
                   projectId: $project
@@ -66,9 +76,15 @@ jobs:
                   }
                 }
               }
-            ' -f project=$PROJECT_ID -f item=$PROJECT_ITEM_ID -f field=$STATUS_FIELD_ID -f value="In Progress"
+            ' -f project=$PROJECT_ID -f item=$PROJECT_ITEM_ID -f field=$STATUS_FIELD_ID -f value="In Progress")
 
-            echo "イシューのプロジェクトステータスを 'In Progress' に更新しました。"
+            if echo "$UPDATE_RESULT" | grep -q "errors"; then
+              echo "ステータス更新中にエラーが発生しました："
+              echo "$UPDATE_RESULT"
+              exit 1
+            else
+              echo "イシューのプロジェクトステータスを 'In Progress' に更新しました。"
+            fi
           else
             echo "ブランチ名に数字が見つかりませんでした。イシューの更新はスキップします。"
           fi

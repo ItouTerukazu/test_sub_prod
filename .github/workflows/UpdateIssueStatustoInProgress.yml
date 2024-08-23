@@ -18,6 +18,8 @@ jobs:
           PROJECT_ID: ${{ secrets.PROJECT_ID }}
           STATUS_FIELD_ID: ${{ secrets.STATUS_FIELD_ID }}
         run: |
+          set -x  # デバッグモードを有効化
+
           # ブランチ名から最初の数字列を抽出
           ISSUE_NUMBER=$(echo ${{ github.ref }} | grep -oP '\d+' | head -n1)
           
@@ -26,14 +28,16 @@ jobs:
             
             # イシューのノードIDを取得
             ISSUE_NODE_ID=$(gh api graphql -f query='
-              query($owner:String!, $name:String!, $number:Int!) {
-                repository(owner:$owner, name:$name) {
+              query($owner:String!, $repo:String!, $number:Int!) {
+                repository(owner:$owner, name:$repo) {
                   issue(number:$number) {
                     id
                   }
                 }
               }
-            ' -f owner=${{ github.repository_owner }} -f name=${{ github.event.repository.name }} -F number=$ISSUE_NUMBER --jq '.data.repository.issue.id')
+            ' -f owner=${{ github.repository_owner }} -f repo=${{ github.event.repository.name }} -F number=$ISSUE_NUMBER --jq '.data.repository.issue.id')
+
+            echo "イシューノードID: $ISSUE_NODE_ID"
 
             if [ -z "$ISSUE_NODE_ID" ]; then
               echo "イシューが見つかりませんでした。処理を中止します。"
@@ -45,15 +49,22 @@ jobs:
               query($projectId:ID!, $issueId:ID!) {
                 node(id:$projectId) {
                   ... on ProjectV2 {
-                    items(first:1, filter:{content:{id:$issueId}}) {
+                    items(first:100) {
                       nodes {
                         id
+                        content {
+                          ... on Issue {
+                            id
+                          }
+                        }
                       }
                     }
                   }
                 }
               }
-            ' -f projectId=$PROJECT_ID -f issueId=$ISSUE_NODE_ID --jq '.data.node.items.nodes[0].id')
+            ' -f projectId=$PROJECT_ID -f issueId=$ISSUE_NODE_ID --jq ".data.node.items.nodes[] | select(.content.id == \"$ISSUE_NODE_ID\") | .id")
+
+            echo "プロジェクトアイテムID: $PROJECT_ITEM_ID"
 
             if [ -z "$PROJECT_ITEM_ID" ]; then
               echo "プロジェクト内にイシューが見つかりませんでした。処理を中止します。"
@@ -62,10 +73,10 @@ jobs:
 
             # ステータスオプションIDを取得
             STATUS_OPTION_ID=$(gh api graphql -f query='
-              query($projectId:ID!, $fieldId:ID!) {
+              query($projectId:ID!) {
                 node(id:$projectId) {
                   ... on ProjectV2 {
-                    field(id:$fieldId) {
+                    field(name: "Status") {
                       ... on ProjectV2SingleSelectField {
                         options {
                           id
@@ -76,7 +87,9 @@ jobs:
                   }
                 }
               }
-            ' -f projectId=$PROJECT_ID -f fieldId=$STATUS_FIELD_ID --jq '.data.node.field.options[] | select(.name == "In Progress") | .id')
+            ' -f projectId=$PROJECT_ID --jq '.data.node.field.options[] | select(.name == "In Progress") | .id')
+
+            echo "ステータスオプションID: $STATUS_OPTION_ID"
 
             if [ -z "$STATUS_OPTION_ID" ]; then
               echo "'In Progress' ステータスオプションが見つかりませんでした。処理を中止します。"
@@ -85,21 +98,23 @@ jobs:
 
             # プロジェクトアイテムのステータスを更新
             UPDATE_RESULT=$(gh api graphql -f query='
-              mutation($project:ID!, $item:ID!, $field:ID!, $value:String!) {
-                updateProjectV2ItemFieldValue(input: {
-                  projectId: $project
-                  itemId: $item
-                  fieldId: $field
-                  value: { 
-                    singleSelectOptionId: $value
+              mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $optionId:String!) {
+                updateProjectV2ItemFieldValue(
+                  input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: {
+                      singleSelectOptionId: $optionId
+                    }
                   }
-                }) {
+                ) {
                   projectV2Item {
                     id
                   }
                 }
               }
-            ' -f project=$PROJECT_ID -f item=$PROJECT_ITEM_ID -f field=$STATUS_FIELD_ID -f value=$STATUS_OPTION_ID)
+            ' -f projectId=$PROJECT_ID -f itemId=$PROJECT_ITEM_ID -f fieldId=$STATUS_FIELD_ID -f optionId=$STATUS_OPTION_ID)
 
             if echo "$UPDATE_RESULT" | grep -q "errors"; then
               echo "ステータス更新中にエラーが発生しました："

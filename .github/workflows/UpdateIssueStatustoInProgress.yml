@@ -24,28 +24,12 @@ jobs:
           if [ -n "$ISSUE_NUMBER" ]; then
             echo "イシュー番号 $ISSUE_NUMBER のプロジェクトステータスを 'In Progress' に更新します。"
             
-            # イシューのノードIDを取得
-            ISSUE_NODE_ID=$(gh api graphql -f query='
-              query($owner:String!, $repo:String!, $number:Int!) {
-                repository(owner:$owner, name:$repo) {
-                  issue(number:$number) {
-                    id
-                  }
-                }
-              }
-            ' -f owner=${{ github.repository_owner }} -f repo=${{ github.event.repository.name }} -F number=$ISSUE_NUMBER --jq '.data.repository.issue.id')
-
-            if [ -z "$ISSUE_NODE_ID" ]; then
-              echo "イシューが見つかりませんでした。処理を中止します。"
-              exit 1
-            fi
-
             # プロジェクト内のイシューのIDを取得
             PROJECT_ITEM_ID=$(gh api graphql -f query='
-              query($project:ID!, $issue:ID!) {
-                node(id:$project) {
-                  ... on ProjectV2 {
-                    items(first:1, filter:{contentTypes:[ISSUE], content:{id:$issue}}) {
+              query($owner:String!, $name:String!, $number:Int!, $projectId:ID!) {
+                repository(owner:$owner, name:$name) {
+                  issue(number:$number) {
+                    projectItems(first:1, projectId:$projectId) {
                       nodes {
                         id
                       }
@@ -53,10 +37,33 @@ jobs:
                   }
                 }
               }
-            ' -f project=$PROJECT_ID -f issue=$ISSUE_NODE_ID --jq '.data.node.items.nodes[0].id')
+            ' -f owner=${{ github.repository_owner }} -f name=${{ github.event.repository.name }} -F number=$ISSUE_NUMBER -f projectId=$PROJECT_ID --jq '.data.repository.issue.projectItems.nodes[0].id')
 
             if [ -z "$PROJECT_ITEM_ID" ]; then
               echo "プロジェクト内にイシューが見つかりませんでした。処理を中止します。"
+              exit 1
+            fi
+
+            # ステータスオプションIDを取得
+            STATUS_OPTION_ID=$(gh api graphql -f query='
+              query($projectId:ID!) {
+                node(id:$projectId) {
+                  ... on ProjectV2 {
+                    field(name:"Status") {
+                      ... on ProjectV2SingleSelectField {
+                        options {
+                          id
+                          name
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ' -f projectId=$PROJECT_ID --jq '.data.node.field.options[] | select(.name == "In Progress") | .id')
+
+            if [ -z "$STATUS_OPTION_ID" ]; then
+              echo "'In Progress' ステータスオプションが見つかりませんでした。処理を中止します。"
               exit 1
             fi
 
@@ -68,7 +75,7 @@ jobs:
                   itemId: $item
                   fieldId: $field
                   value: { 
-                    text: $value
+                    singleSelectOptionId: $value
                   }
                 }) {
                   projectV2Item {
@@ -76,7 +83,7 @@ jobs:
                   }
                 }
               }
-            ' -f project=$PROJECT_ID -f item=$PROJECT_ITEM_ID -f field=$STATUS_FIELD_ID -f value="In Progress")
+            ' -f project=$PROJECT_ID -f item=$PROJECT_ITEM_ID -f field=$STATUS_FIELD_ID -f value=$STATUS_OPTION_ID)
 
             if echo "$UPDATE_RESULT" | grep -q "errors"; then
               echo "ステータス更新中にエラーが発生しました："

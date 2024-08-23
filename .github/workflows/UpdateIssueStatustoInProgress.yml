@@ -17,7 +17,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           PROJECT_ID: ${{ secrets.PROJECT_ID }}
-          STATUS_FIELD_ID: ${{ secrets.STATUS_FIELD_ID }}
         run: |
           set -x  # デバッグモードを有効化
 
@@ -72,24 +71,46 @@ jobs:
               exit 1
             fi
 
-            # ステータスオプションIDを取得
-            STATUS_OPTION_ID=$(gh api graphql -H "Authorization: Bearer $PROJECT_TOKEN" -f query='
+            # プロジェクトのフィールドとステータスオプションを取得
+            FIELDS_AND_OPTIONS=$(gh api graphql -H "Authorization: Bearer $PROJECT_TOKEN" -f query='
               query($projectId:ID!) {
                 node(id:$projectId) {
                   ... on ProjectV2 {
-                    field(name: "Status") {
-                      ... on ProjectV2SingleSelectField {
-                        options {
+                    fields(first:20) {
+                      nodes {
+                        ... on ProjectV2Field {
                           id
                           name
+                        }
+                        ... on ProjectV2SingleSelectField {
+                          id
+                          name
+                          options {
+                            id
+                            name
+                          }
                         }
                       }
                     }
                   }
                 }
               }
-            ' -f projectId=$PROJECT_ID --jq '.data.node.field.options[] | select(.name == "In Progress") | .id')
+            ' -f projectId=$PROJECT_ID)
 
+            echo "プロジェクトのフィールドとオプション:"
+            echo "$FIELDS_AND_OPTIONS" | jq .
+
+            # ステータスフィールドIDを取得（大文字・小文字を区別しない）
+            STATUS_FIELD_ID=$(echo "$FIELDS_AND_OPTIONS" | jq -r '.data.node.fields.nodes[] | select(.name | ascii_downcase == "status") | .id')
+            echo "ステータスフィールドID: $STATUS_FIELD_ID"
+
+            if [ -z "$STATUS_FIELD_ID" ]; then
+              echo "ステータスフィールドが見つかりませんでした。処理を中止します。"
+              exit 1
+            fi
+
+            # "In Progress" ステータスオプションIDを取得（大文字・小文字を区別しない）
+            STATUS_OPTION_ID=$(echo "$FIELDS_AND_OPTIONS" | jq -r ".data.node.fields.nodes[] | select(.name | ascii_downcase == \"status\") | .options[] | select(.name | ascii_downcase == \"in progress\") | .id")
             echo "ステータスオプションID: $STATUS_OPTION_ID"
 
             if [ -z "$STATUS_OPTION_ID" ]; then

@@ -11,11 +11,25 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v2
+
       - name: Update Issue Status to In Progress
         run: |
-          ISSUE_NUMBER=$(echo ${{ github.ref }} | grep -oP '(?<=issue-)[0-9]+')
+          # ブランチ名から最初の数字列を抽出
+          ISSUE_NUMBER=$(echo ${{ github.ref }} | grep -oP '\d+' | head -n1)
+          
           if [ -n "$ISSUE_NUMBER" ]; then
-            gh api graphql -f query='mutation($id:ID!) { updateIssue(input:{id:$id, state:"IN_PROGRESS"}) { issue { id } } }' -f id=$ISSUE_NUMBER
+            echo "イシュー番号 $ISSUE_NUMBER のステータスを 'In Progress' に更新します。"
+            gh api graphql -f query='
+              mutation($issueId:ID!) {
+                updateIssue(input:{id:$issueId, state:IN_PROGRESS}) {
+                  issue {
+                    id
+                  }
+                }
+              }
+            ' -f issueId="$ISSUE_NUMBER"
+          else
+            echo "ブランチ名に数字が見つかりませんでした。イシューの更新はスキップします。"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

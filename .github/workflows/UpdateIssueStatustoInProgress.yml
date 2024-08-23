@@ -1,0 +1,21 @@
+name: Update Issue Status to In Progress
+
+on:
+  create:
+    branches:
+      - '*'
+
+jobs:
+  update-issue-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+      - name: Update Issue Status to In Progress
+        run: |
+          ISSUE_NUMBER=$(echo ${{ github.ref }} | grep -oP '(?<=issue-)[0-9]+')
+          if [ -n "$ISSUE_NUMBER" ]; then
+            gh api graphql -f query='mutation($id:ID!) { updateIssue(input:{id:$id, state:"IN_PROGRESS"}) { issue { id } } }' -f id=$ISSUE_NUMBER
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

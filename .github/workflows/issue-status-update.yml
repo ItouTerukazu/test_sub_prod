@@ -1,9 +1,6 @@
 name: Issue and Project Status Update
 
 on:
-  create:
-    branches:
-      - '**'
   pull_request:
     types: [opened, closed, reopened]
 
@@ -24,17 +21,12 @@ jobs:
         python -m pip install --upgrade pip
         pip install requests
 
-    - name: Extract issue number from branch name
-      id: extract_issue_number
-      run: echo "issue_number=$(echo ${GITHUB_REF#refs/heads/} | grep -o -E '[0-9]+')" >> $GITHUB_OUTPUT
-
     - name: Update Issue and Project Status
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
         REPO: ${{ github.repository }}
-        ISSUE_NUMBER: ${{ steps.extract_issue_number.outputs.issue_number }}
-        EVENT_NAME: ${{ github.event_name }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
         PR_ACTION: ${{ github.event.action }}
         PR_MERGED: ${{ github.event.pull_request.merged }}
         PROJECT_ID: ${{ secrets.PROJECT_ID }}
@@ -45,14 +37,14 @@ jobs:
         import requests
         import json
         import sys
+        import re
 
         # GitHub API設定
         token = os.environ['PROJECT_TOKEN'] if 'PROJECT_TOKEN' in os.environ else os.environ['GITHUB_TOKEN']
         repo = os.environ['REPO']
-        issue_number = os.environ['ISSUE_NUMBER']
-        event_name = os.environ['EVENT_NAME']
-        pr_action = os.environ.get('PR_ACTION')
-        pr_merged = os.environ.get('PR_MERGED')
+        pr_number = os.environ['PR_NUMBER']
+        pr_action = os.environ['PR_ACTION']
+        pr_merged = os.environ['PR_MERGED'].lower() == 'true'
         project_id = os.environ['PROJECT_ID']
         status_field_id = os.environ['STATUS_FIELD_ID']
 
@@ -66,19 +58,41 @@ jobs:
 
         base_url = f'https://api.github.com/repos/{repo}'
 
-        def update_issue_status(state, state_reason=None):
-            url = f'{base_url}/issues/{issue_number}'
-            data = {'state': state}
-            if state_reason:
-                data['state_reason'] = state_reason
-            response = requests.patch(url, headers=headers, json=data)
-            try:
-                response.raise_for_status()
-                print(f"Successfully updated issue status to {state}")
-            except requests.exceptions.HTTPError as e:
-                print(f"HTTP Error occurred: {e}")
-                print(f"Response content: {response.content}")
-                raise
+        def get_linked_issue_number():
+            url = f'{base_url}/pulls/{pr_number}'
+            response = requests.get(url, headers=headers)
+            response.raise_for_status()
+            pr_data = response.json()
+            
+            print(f"PR Data: {json.dumps(pr_data, indent=2)}")
+            
+            # Check PR body for "Closes #X" or "Fixes #X"
+            body = pr_data.get('body', '')
+            print(f"PR Body: {body}")
+            match = re.search(r'(closes|fixes) #(\d+)', body, re.IGNORECASE)
+            if match:
+                return match.group(2)
+            
+            # Check if the PR is linked to an issue
+            if 'issue_url' in pr_data:
+                issue_number = pr_data['issue_url'].split('/')[-1]
+                print(f"Linked Issue Number: {issue_number}")
+                return issue_number
+            
+            # Check commit messages for "Fixes #X"
+            commits_url = pr_data['commits_url']
+            commits_response = requests.get(commits_url, headers=headers)
+            commits_response.raise_for_status()
+            commits_data = commits_response.json()
+            
+            for commit in commits_data:
+                commit_message = commit['commit']['message']
+                print(f"Commit Message: {commit_message}")
+                match = re.search(r'(closes|fixes) #(\d+)', commit_message, re.IGNORECASE)
+                if match:
+                    return match.group(2)
+            
+            return None
 
         def execute_graphql_query(query, variables):
             request_json = {
@@ -92,14 +106,23 @@ jobs:
             response.raise_for_status()
             return response.json()
 
-        def get_project_item_id():
+        def get_project_item_id(item_type, item_number):
             query = """
             query GetProjectItemId($owner: String!, $name: String!, $number: Int!) {
               repository(owner: $owner, name: $name) {
-                issue(number: $number) {
-                  projectItems(first: 1) {
-                    nodes {
-                      id
+                issueOrPullRequest(number: $number) {
+                  ... on Issue {
+                    projectItems(first: 1) {
+                      nodes {
+                        id
+                      }
+                    }
+                  }
+                  ... on PullRequest {
+                    projectItems(first: 1) {
+                      nodes {
+                        id
+                      }
                     }
                   }
                 }
@@ -110,7 +133,7 @@ jobs:
             variables = {
                 "owner": owner,
                 "name": name,
-                "number": int(issue_number)
+                "number": int(item_number)
             }
             print("Query string:")
             print(query)
@@ -121,10 +144,10 @@ jobs:
             if 'errors' in data:
                 raise Exception(f"GraphQL query failed: {json.dumps(data['errors'])}")
             
-            project_items = data.get('data', {}).get('repository', {}).get('issue', {}).get('projectItems', {}).get('nodes', [])
+            project_items = data.get('data', {}).get('repository', {}).get('issueOrPullRequest', {}).get('projectItems', {}).get('nodes', [])
             
             if not project_items:
-                raise Exception(f"No project items found for issue #{issue_number}")
+                raise Exception(f"No project items found for {item_type} #{item_number}")
             
             return project_items[0]['id']
 
@@ -168,7 +191,13 @@ jobs:
 
         def update_project_status(status):
             try:
-                item_id = get_project_item_id()
+                issue_number = get_linked_issue_number()
+                if issue_number:
+                    item_id = get_project_item_id('Issue', issue_number)
+                    print(f"Updating linked Issue #{issue_number}")
+                else:
+                    item_id = get_project_item_id('PullRequest', pr_number)
+                    print(f"Updating PR #{pr_number}")
                 print(f"Project item ID: {item_id}")
                 status_option_id = get_status_option_id(status)
                 print(f"Status option ID for '{status}': {status_option_id}")
@@ -211,23 +240,18 @@ jobs:
             print(f"Successfully updated project status to {status}")
 
         try:
-            print(f"Event: {event_name}, PR Action: {pr_action}, PR Merged: {pr_merged}")
-            if event_name == 'create':
-                update_issue_status('open')
+            print(f"PR Action: {pr_action}, PR Merged: {pr_merged}")
+            if pr_action == 'opened':
+                update_project_status('Reviewing')
+            elif pr_action == 'closed':
+                if pr_merged:
+                    update_project_status('Done')
+                else:
+                    update_project_status('In Progress')
+            elif pr_action == 'reopened':
                 update_project_status('In Progress')
-            elif event_name == 'pull_request':
-                if pr_action == 'opened':
-                    update_issue_status('open')
-                    update_project_status('Reviewing')
-                elif pr_action == 'closed':
-                    if pr_merged == 'true':
-                        update_issue_status('closed', 'completed')
-                        update_project_status('Done')
-                    else:
-                        update_issue_status('open')
-                        update_project_status('In Progress')
         except Exception as e:
-            print(f"Error updating issue or project status: {str(e)}")
+            print(f"Error updating project status: {str(e)}")
             sys.exit(1)
 
         EOF

@@ -1,0 +1,145 @@
+name: Update Issue Status to In Review on PR Creation
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  update-issue-status:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+
+      - name: Update Issue Status to In Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          PROJECT_ID: ${{ secrets.PROJECT_ID }}
+        run: |
+          set -x  # デバッグモードを有効化
+
+          # PRに関連するイシューを取得
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          LINKED_ISSUES=$(gh api graphql -f query='
+            query($owner:String!, $repo:String!, $number:Int!) {
+              repository(owner:$owner, name:$repo) {
+                pullRequest(number:$number) {
+                  closingIssuesReferences(first:10) {
+                    nodes {
+                      number
+                    }
+                  }
+                }
+              }
+            }
+          ' -f owner=${{ github.repository_owner }} -f repo=${{ github.repository.name }} -F number=$PR_NUMBER --jq '.data.repository.pullRequest.closingIssuesReferences.nodes[].number')
+
+          if [ -z "$LINKED_ISSUES" ]; then
+            echo "このPRに関連するイシューが見つかりませんでした。処理を中止します。"
+            exit 0
+          fi
+
+          for ISSUE_NUMBER in $LINKED_ISSUES; do
+            echo "イシュー番号 $ISSUE_NUMBER のプロジェクトステータスを 'In Review' に更新します。"
+            
+            # イシューのノードIDを取得
+            ISSUE_NODE_ID=$(gh api graphql -f query='
+              query($owner:String!, $repo:String!, $number:Int!) {
+                repository(owner:$owner, name:$repo) {
+                  issue(number:$number) {
+                    id
+                  }
+                }
+              }
+            ' -f owner=${{ github.repository_owner }} -f repo=${{ github.repository.name }} -F number=$ISSUE_NUMBER --jq '.data.repository.issue.id')
+
+            echo "イシューノードID: $ISSUE_NODE_ID"
+
+            if [ -z "$ISSUE_NODE_ID" ]; then
+              echo "イシューが見つかりませんでした。次のイシューに進みます。"
+              continue
+            fi
+
+            # プロジェクト内のイシューのIDを取得
+            PROJECT_ITEM_ID=$(gh api graphql -H "Authorization: Bearer $PROJECT_TOKEN" -f query='
+              query($projectId:ID!, $contentId:ID!) {
+                node(id:$projectId) {
+                  ... on ProjectV2 {
+                    items(first:1, filter:{content:{id:$contentId}}) {
+                      nodes {
+                        id
+                      }
+                    }
+                  }
+                }
+              }
+            ' -f projectId=$PROJECT_ID -f contentId=$ISSUE_NODE_ID --jq '.data.node.items.nodes[0].id')
+
+            echo "プロジェクトアイテムID: $PROJECT_ITEM_ID"
+
+            if [ -z "$PROJECT_ITEM_ID" ]; then
+              echo "プロジェクト内にイシューが見つかりませんでした。次のイシューに進みます。"
+              continue
+            fi
+
+            # ステータスフィールドIDとオプションIDを取得
+            FIELD_INFO=$(gh api graphql -H "Authorization: Bearer $PROJECT_TOKEN" -f query='
+              query($projectId:ID!) {
+                node(id:$projectId) {
+                  ... on ProjectV2 {
+                    fields(first:20) {
+                      nodes {
+                        ... on ProjectV2SingleSelectField {
+                          id
+                          name
+                          options {
+                            id
+                            name
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ' -f projectId=$PROJECT_ID)
+
+            STATUS_FIELD_ID=$(echo "$FIELD_INFO" | jq -r '.data.node.fields.nodes[] | select(.name | ascii_downcase == "status") | .id')
+            STATUS_OPTION_ID=$(echo "$FIELD_INFO" | jq -r '.data.node.fields.nodes[] | select(.name | ascii_downcase == "status") | .options[] | select(.name | ascii_downcase == "in review") | .id')
+
+            echo "ステータスフィールドID: $STATUS_FIELD_ID"
+            echo "In Review オプションID: $STATUS_OPTION_ID"
+
+            if [ -z "$STATUS_FIELD_ID" ] || [ -z "$STATUS_OPTION_ID" ]; then
+              echo "ステータスフィールドまたは 'In Review' オプションが見つかりませんでした。次のイシューに進みます。"
+              continue
+            fi
+
+            # プロジェクトアイテムのステータスを更新
+            UPDATE_RESULT=$(gh api graphql -H "Authorization: Bearer $PROJECT_TOKEN" -f query='
+              mutation($projectId:ID!, $itemId:ID!, $fieldId:ID!, $optionId:String!) {
+                updateProjectV2ItemFieldValue(
+                  input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: {
+                      singleSelectOptionId: $optionId
+                    }
+                  }
+                ) {
+                  projectV2Item {
+                    id
+                  }
+                }
+              }
+            ' -f projectId=$PROJECT_ID -f itemId=$PROJECT_ITEM_ID -f fieldId=$STATUS_FIELD_ID -f optionId=$STATUS_OPTION_ID)
+
+            if echo "$UPDATE_RESULT" | grep -q "errors"; then
+              echo "イシュー $ISSUE_NUMBER のステータス更新中にエラーが発生しました："
+              echo "$UPDATE_RESULT"
+            else
+              echo "イシュー $ISSUE_NUMBER のプロジェクトステータスを 'In Review' に更新しました。"
+            fi
+          done

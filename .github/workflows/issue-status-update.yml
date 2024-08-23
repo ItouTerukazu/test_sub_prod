@@ -67,30 +67,24 @@ jobs:
             print(f"PR Data: {json.dumps(pr_data, indent=2)}")
             
             # Check PR body for "Closes #X" or "Fixes #X"
-            body = pr_data.get('body', '')
+            body = pr_data.get('body') or ''
             print(f"PR Body: {body}")
             match = re.search(r'(closes|fixes) #(\d+)', body, re.IGNORECASE)
             if match:
                 return match.group(2)
             
             # Check if the PR is linked to an issue
-            if 'issue_url' in pr_data:
-                issue_number = pr_data['issue_url'].split('/')[-1]
+            issue_url = pr_data.get('issue_url')
+            if issue_url:
+                issue_number = issue_url.split('/')[-1]
                 print(f"Linked Issue Number: {issue_number}")
                 return issue_number
             
-            # Check commit messages for "Fixes #X"
-            commits_url = pr_data['commits_url']
-            commits_response = requests.get(commits_url, headers=headers)
-            commits_response.raise_for_status()
-            commits_data = commits_response.json()
-            
-            for commit in commits_data:
-                commit_message = commit['commit']['message']
-                print(f"Commit Message: {commit_message}")
-                match = re.search(r'(closes|fixes) #(\d+)', commit_message, re.IGNORECASE)
-                if match:
-                    return match.group(2)
+            # Check branch name for issue number
+            branch_name = pr_data.get('head', {}).get('ref', '')
+            branch_match = re.search(r'(\d+)', branch_name)
+            if branch_match:
+                return branch_match.group(1)
             
             return None
 

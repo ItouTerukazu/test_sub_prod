@@ -1,4 +1,4 @@
-name: Update Issue Status to In Progress
+name: Update Project Issue Status to In Progress
 
 on:
   create:
@@ -6,30 +6,69 @@ on:
       - '*'
 
 jobs:
-  update-issue-status:
+  update-project-status:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v2
 
-      - name: Update Issue Status to In Progress
+      - name: Update Project Issue Status to In Progress
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROJECT_ID: "PROJECT_ID"
+          STATUS_FIELD_ID: "STATUS_FIELD_ID"
         run: |
           # ブランチ名から最初の数字列を抽出
           ISSUE_NUMBER=$(echo ${{ github.ref }} | grep -oP '\d+' | head -n1)
           
           if [ -n "$ISSUE_NUMBER" ]; then
-            echo "イシュー番号 $ISSUE_NUMBER のステータスを 'In Progress' に更新します。"
-            gh api graphql -f query='
-              mutation($issueId:ID!) {
-                updateIssue(input:{id:$issueId, state:IN_PROGRESS}) {
-                  issue {
+            echo "イシュー番号 $ISSUE_NUMBER のプロジェクトステータスを 'In Progress' に更新します。"
+            
+            # イシューのノードIDを取得
+            ISSUE_NODE_ID=$(gh api graphql -f query='
+              query($owner:String!, $repo:String!, $number:Int!) {
+                repository(owner:$owner, name:$repo) {
+                  issue(number:$number) {
                     id
                   }
                 }
               }
-            ' -f issueId="$ISSUE_NUMBER"
+            ' -f owner=${{ github.repository_owner }} -f repo=${{ github.event.repository.name }} -f number=$ISSUE_NUMBER --jq '.data.repository.issue.id')
+
+            # プロジェクト内のイシューのIDを取得
+            PROJECT_ITEM_ID=$(gh api graphql -f query='
+              query($project:ID!, $issue:ID!) {
+                node(id:$project) {
+                  ... on ProjectV2 {
+                    items(first:1, filter:{contentTypes:[ISSUE], content:{id:$issue}}) {
+                      nodes {
+                        id
+                      }
+                    }
+                  }
+                }
+              }
+            ' -f project=$PROJECT_ID -f issue=$ISSUE_NODE_ID --jq '.data.node.items.nodes[0].id')
+
+            # プロジェクトアイテムのステータスを更新
+            gh api graphql -f query='
+              mutation($project:ID!, $item:ID!, $field:ID!, $value:String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $project
+                  itemId: $item
+                  fieldId: $field
+                  value: { 
+                    text: $value
+                  }
+                }) {
+                  projectV2Item {
+                    id
+                  }
+                }
+              }
+            ' -f project=$PROJECT_ID -f item=$PROJECT_ITEM_ID -f field=$STATUS_FIELD_ID -f value="In Progress"
+
+            echo "イシューのプロジェクトステータスを 'In Progress' に更新しました。"
           else
             echo "ブランチ名に数字が見つかりませんでした。イシューの更新はスキップします。"
           fi
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
